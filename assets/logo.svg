@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-labelledby="title desc">
+  <title id="title">Footage Archive</title>
+  <desc id="desc">Marca geométrica de Footage Archive</desc>
+  <rect width="240" height="240" fill="#101114"/>
+  <path d="M54 54h132v28H86v39h76v27H86v38H54z" fill="#e7e4dc"/>
+  <path d="M162 54h24v132h-24z" fill="#9b9b95"/>
+  <circle cx="186" cy="186" r="10" fill="#9b9b95"/>
+</svg>
