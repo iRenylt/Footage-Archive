@@ -476,6 +476,11 @@ body > * { position: relative; z-index: 1; }
 .gallery-stage { overflow: hidden; border-radius: 30px 12px 30px 12px; }
 .wall-image-button img { transition: transform 1s cubic-bezier(.22, .61, .36, 1), filter .5s ease; }
 .wall-image-button:hover img { transform: scale(1.06); filter: saturate(1.15) brightness(1.08); }
+@media (hover: none), (pointer: coarse) {
+	.wall-image-button { touch-action: pan-y; }
+	.wall-image-button:hover img,
+	.wall-image-button:active img { transform: none; filter: none; }
+}
 .wall-image-button span {
 	padding: 11px 18px;
 	border: 1px solid rgba(255, 255, 255, .72);
