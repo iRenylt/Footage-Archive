@@ -10,6 +10,15 @@ window.clearWebCache = clearWebCache;
 
 const config = window.APP_CONFIG;
 const content = window.ARCHIVE_CONTENT || {};
+const logoUrl = config.logoImage;
+if (logoUrl) {
+  [{ rel: 'icon', type: 'image/png' }, { rel: 'apple-touch-icon' }].forEach(({ rel, type }) => {
+    let link = document.querySelector(`link[rel="${rel}"]`);
+    if (!link) { link = document.createElement('link'); link.rel = rel; document.head.append(link); }
+    if (type) link.type = type;
+    link.href = logoUrl;
+  });
+}
 const $ = selector => document.querySelector(selector);
 const texts = content.texts || config.texts || {};
 const system = texts.system || {};
@@ -17,7 +26,7 @@ const fallbackWalls = (content.galleryFallback || config.galleryFallback || []).
 let walls = fallbackWalls.map(wall => ({ ...wall })); let wallIndex = 0;
 let supabaseStatus = 'idle';
 window.addEventListener('offline', () => { supabaseStatus = 'error'; if ($('#note-form')) showFormMessage('Sin conexión.', 'error'); if ($('#gallery-status')) $('#gallery-status').textContent = 'Sin conexión'; });
-window.addEventListener('online', () => { if (config.supabase.url && config.supabase.anonKey && window.archiveClient) { supabaseStatus = 'ready'; if ($('#note-form')) showFormMessage('Conexión recuperada.', 'success'); if ($('#gallery-status')) $('#gallery-status').textContent = 'Galería lista'; } });
+window.addEventListener('online', () => { if (config.supabase.url && config.supabase.anonKey && window.archiveClient) { supabaseStatus = 'ready'; if ($('#note-form')) showFormMessage('Conexión recuperada.', 'success'); window.archiveGalleryRefresh?.(); } });
 document.querySelectorAll('#guide-button').forEach(element => element.remove());
 bindCreditsPanel();
 document.documentElement.style.setProperty('--paper', '#e7e4dc');
@@ -27,12 +36,13 @@ document.documentElement.style.setProperty('--acid', '#a8a8a1');
 document.documentElement.style.setProperty('--line', 'rgba(231,228,220,.18)');
 document.body.style.backgroundColor = '#101114';
 const isHomePage = document.body.classList.contains('page-home') || location.pathname.endsWith('/index.html') || location.pathname.endsWith('/');
+if (isHomePage) sessionStorage.removeItem('archiveDeveloperMode');
 const randomMessages = system.randomMessages || [];
 const accessTitles = system.accessTitles || [];
 const pinMessages = system.pinMessages?.length ? system.pinMessages : randomMessages;
 const menuMessages = system.menuMessages?.length ? system.menuMessages : [config.intro];
 const randomPinMessage = () => pinMessages[Math.floor(Math.random() * pinMessages.length)];
-const randomMenuMessage = () => menuMessages[Math.floor(Math.random() * menuMessages.length)];
+const randomMenuMessage = () => menuMessages[0];
 const randomAccessTitle = () => accessTitles[Math.floor(Math.random() * accessTitles.length)];
 
 function bindCreditsPanel() {
@@ -53,7 +63,7 @@ function bindCreditsPanel() {
     panel.setAttribute('role', 'dialog');
     panel.setAttribute('aria-modal', 'true');
     panel.setAttribute('aria-labelledby', 'credits-title');
-    panel.innerHTML = `<div class="credits-sheet"><button class="credits-close" type="button" aria-label="Cerrar créditos">×</button><p class="eyebrow">FOOTAGE ARCHIVE · CRÉDITOS</p><h2 id="credits-title">Hecho con<br><em>memoria.</em></h2><div class="credits-grid"><article><span>DESARROLLADOR</span><strong>iRenyKn (Diego)</strong><p>La idea, la historia y la mirada detrás de este archivo.</p></article><article><span>SELLO</span><strong>Registros Fantasmas</strong><p>La firma emocional, el nombre y la atmósfera del proyecto.</p></article><article><span>CONTENIDO</span><strong>Cartas, notas y secretos</strong><p>Textos, fechas, recuerdos y mensajes escritos para quedarse.</p></article><article><span>EXPERIENCIA</span><strong>Interacciones y lógica</strong><p>Navegación, PIN, desbloqueos por fecha, secretos y estados dinámicos.</p></article><article><span>IMAGEN Y SONIDO</span><strong>Galería + Spotify</strong><p>Muros, sincronización con Supabase, cambios de imagen y bandas sonoras.</p></article><article><span>DIRECCIÓN VISUAL</span><strong>Colores, tipografía y movimiento</strong><p>Paleta nocturna, rosa luminoso, Space Grotesk, transiciones y animaciones.</p></article></div><p class="credits-final">Gracias por entrar a este espacio.<br>Lo más especial de este archivo es que existe porque nosotros existimos.</p><span class="credits-spark">✦</span></div>`;
+    panel.innerHTML = `<div class="credits-sheet"><button class="credits-close" type="button" aria-label="Cerrar créditos">×</button><p class="eyebrow">FOOTAGE ARCHIVE · CRÉDITOS</p><h2 id="credits-title">Hecho con<br><em>memoria.</em></h2><div class="credits-grid"><article><span>DESARROLLADOR</span><strong>iRenyKn (Diego)</strong><p>La idea, la historia y la mirada detrás de este archivo.</p></article><article><span>SELLO</span><strong>Registros Fantasmas</strong><p>La firma emocional, el nombre y la atmósfera del proyecto.</p></article></div><p class="credits-final">Gracias por entrar a este espacio.<br>Lo más especial de este archivo es que existe porque nosotros existimos.</p></div>`;
     document.body.append(panel);
     const close = () => panel.remove();
     panel.querySelector('.credits-close').addEventListener('click', close);
@@ -64,17 +74,6 @@ function bindCreditsPanel() {
   };
   button.addEventListener('click', openCredits);
 }
-const setDynamicHomeMessage = () => {
-  const heroIntro = $('#hero-intro');
-  if (!heroIntro || !isHomePage) return;
-  const message = heroIntro.querySelector('.hero-message');
-  if (!message) return;
-  message.classList.add('is-changing');
-  setTimeout(() => {
-    message.textContent = randomMenuMessage();
-    message.classList.remove('is-changing');
-  }, 220);
-};
 const letterTexts = { open: 'Abrir carta', close: 'Cerrar carta', soundtrack: 'BANDA SONORA DE ESTA CARTA', signature: 'Con cariño, para leerlo despacio.' };
 const letterUnlockDay = 9;
 const monthNumbers = { enero: 1, febrero: 2, marzo: 3, abril: 4, mayo: 5, junio: 6, julio: 7, agosto: 8, septiembre: 9, octubre: 10, noviembre: 11, diciembre: 12 };
@@ -98,7 +97,6 @@ if (isHomePage && $('#hero-intro')) {
   setInterval(() => {
     const greeting = $('#hero-intro .hero-greeting');
     if (greeting) greeting.textContent = `${timeGreeting()}, ${texts.notes?.greetingName || config.name}.`;
-    setDynamicHomeMessage();
   }, 7000);
 }
 if ($('#access-random')) $('#access-random').textContent = randomPinMessage();
@@ -108,7 +106,28 @@ if ($('#loader p')) {
 if (!isHomePage && $('#loader')) { $('#loader').style.transition = 'none'; $('#loader').classList.add('done'); }
 if (!$('#access-random') && $('#pin-form')) { const randomCopy = document.createElement('p'); randomCopy.className = 'access-random'; randomCopy.textContent = randomPinMessage(); $('#pin-form').before(randomCopy); }
 if ($('#access-title')) $('#access-title').innerHTML = randomAccessTitle();
-if ($('#access-screen')) { $('#access-screen').classList.add('visible'); $('#access-screen').setAttribute('aria-hidden', 'false'); }
+if ($('#access-screen')) { $('#access-screen').classList.add('visible'); $('#access-screen').setAttribute('aria-hidden', 'false'); document.body.classList.add('access-locked'); }
+let homePinProfile = null;
+function setupHomePinProfiles() {
+  if (!isHomePage || !$('#pin-form') || $('#pin-profiles')) return;
+  document.body.classList.add('home-profile-choice');
+  const profiles = config.pinProfiles || {};
+  const chooser = document.createElement('div');
+  chooser.id = 'pin-profiles';
+  chooser.className = 'pin-profiles';
+  chooser.setAttribute('role', 'group');
+  chooser.setAttribute('aria-label', 'Elige quién entra');
+  chooser.innerHTML = Object.entries(profiles).map(([key, profile]) => `<button type="button" class="pin-profile" data-profile="${key}" aria-pressed="false"><img src="${profile.image}" alt="${profile.label}"><span>${profile.label}</span></button>`).join('');
+  $('#pin-form').prepend(chooser);
+  chooser.querySelectorAll('.pin-profile').forEach(button => button.addEventListener('click', () => {
+    homePinProfile = button.dataset.profile;
+    document.body.classList.remove('home-profile-choice');
+    chooser.querySelectorAll('.pin-profile').forEach(option => { const selected = option === button; option.classList.toggle('is-selected', selected); option.setAttribute('aria-pressed', String(selected)); });
+    $('#pin-message').textContent = '';
+    $('#pin-input').focus();
+  }));
+}
+setupHomePinProfiles();
 if ($('.access-box') && !$('.access-box').querySelector('.access-logo')) { const logo = document.createElement('img'); logo.className = 'access-logo'; logo.src = config.logoImage; logo.alt = config.logoAlt || config.name; $('.access-box').prepend(logo); }
 if ($('#pin-input')) { $('#pin-input').placeholder = texts.pinPlaceholder || '0 0 0 0'; if (!$('#pin-label')) { const pinLabel = document.createElement('label'); pinLabel.id = 'pin-label'; pinLabel.className = 'pin-label'; pinLabel.htmlFor = 'pin-input'; pinLabel.textContent = texts.pinLabel || 'Introduce tu PIN'; $('#pin-input').before(pinLabel); } }
 if (document.body.classList.contains('page-cartas')) bindLetterLinks();
@@ -274,8 +293,9 @@ function renderWall() {
   const stage = $('#gallery-stage');
   if (!stage) return;
   if (!stage.querySelector('.wall-image-button')) {
-    stage.innerHTML = `<button class="wall-image-button" id="change-image" type="button"><img src="" alt=""><span>presiona para cambiar</span></button><div class="gallery-copy"><h3></h3><p></p></div>`;
+    stage.innerHTML = `<button class="wall-image-button" id="change-image" type="button"><img src="" alt=""><span>presiona para cambiar</span></button><div class="gallery-copy"><h3></h3><p></p></div><button class="wall-edit-toggle" id="edit-wall-toggle" type="button">Editar muro</button><form class="wall-edit-form" id="wall-edit-form" hidden><label>Título<input name="title" maxlength="80" required></label><label>Descripción<textarea name="caption" maxlength="240" rows="3" required></textarea></label><div><button type="submit" class="wall-edit-save">Guardar cambios</button><button type="button" class="wall-edit-cancel">Cancelar</button></div><p class="wall-edit-message" role="status"></p></form>`;
   }
+  if (!stage.querySelector('.wall-edit-form')) stage.insertAdjacentHTML('beforeend', '<button class="wall-edit-toggle" id="edit-wall-toggle" type="button">Editar muro</button><form class="wall-edit-form" id="wall-edit-form" hidden><label>Título<input name="title" maxlength="80" required></label><label>Descripción<textarea name="caption" maxlength="240" rows="3" required></textarea></label><div><button type="submit" class="wall-edit-save">Guardar cambios</button><button type="button" class="wall-edit-cancel">Cancelar</button></div><p class="wall-edit-message" role="status"></p></form>');
   const imageButton = $('#change-image');
   if (imageButton && !imageButton.dataset.imagePickerBound) {
     imageButton.addEventListener('click', () => $('#image-picker')?.click());
@@ -290,6 +310,53 @@ function renderWall() {
   stage.querySelector('.gallery-copy h3').textContent = wall.title;
   stage.querySelector('.gallery-copy p').textContent = wall.caption;
   $('#wall-count').textContent = `${String(wallIndex + 1).padStart(2, '0')} / ${String(walls.length).padStart(2, '0')}`;
+  const editForm = $('#wall-edit-form');
+  if (editForm && !editForm.dataset.bound) {
+    $('#edit-wall-toggle').addEventListener('click', () => {
+      editForm.elements.title.value = walls[wallIndex].title || '';
+      editForm.elements.caption.value = walls[wallIndex].caption || '';
+      editForm.hidden = false;
+      $('#edit-wall-toggle').hidden = true;
+      editForm.elements.title.focus();
+    });
+    editForm.querySelector('.wall-edit-cancel').addEventListener('click', () => { editForm.hidden = true; $('#edit-wall-toggle').hidden = false; });
+    editForm.addEventListener('submit', saveWallText);
+    editForm.dataset.bound = 'true';
+  }
+  if (editForm?.hidden === false) {
+    editForm.elements.title.value = wall.title || '';
+    editForm.elements.caption.value = wall.caption || '';
+  }
+}
+async function saveWallText(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const wall = walls[wallIndex];
+  const title = String(form.elements.title.value || '').trim();
+  const caption = String(form.elements.caption.value || '').trim();
+  const message = form.querySelector('.wall-edit-message');
+  if (!title || !caption) { if (message) message.textContent = 'Completa el título y la descripción.'; return; }
+  if (supabaseStatus !== 'ready' || !window.archiveClient || !navigator.onLine) { if (message) message.textContent = 'Supabase no está disponible.'; return; }
+  const saveButton = form.querySelector('.wall-edit-save');
+  if (saveButton) saveButton.disabled = true;
+  if (message) message.textContent = 'Guardando...';
+  try {
+    const payload = { slot: wall.slot || wallIndex + 1, title, caption, image_url: wall.image || '' };
+    const result = wall.id
+      ? await window.archiveClient.from(config.supabase.galleryTable).update({ title, caption }).eq('id', wall.id).select().single()
+      : await window.archiveClient.from(config.supabase.galleryTable).insert(payload).select().single();
+    if (result.error) throw result.error;
+    wall.title = title;
+    wall.caption = caption;
+    if (result.data?.id) wall.id = result.data.id;
+    renderWall();
+    if (message) message.textContent = 'Cambios guardados.';
+    form.hidden = true;
+    $('#edit-wall-toggle').hidden = false;
+  } catch (error) {
+    if (message) message.textContent = 'No se pudieron guardar los cambios.';
+    console.error(error);
+  } finally { if (saveButton) saveButton.disabled = false; }
 }
 function setupSupabase() {
   const settings = config.supabase;
@@ -349,12 +416,13 @@ function showFormMessage(text, type = 'error') { const message = $('#form-messag
 async function changeWallImage(event) { const file = event.target.files[0]; event.target.value = ''; if (!file) return; if (!file.type.startsWith('image/')) { if ($('#gallery-status')) $('#gallery-status').textContent = 'Selecciona un archivo de imagen válido. ❌'; return; } if (supabaseStatus !== 'ready' || !window.archiveClient || !navigator.onLine) { if ($('#gallery-status')) $('#gallery-status').textContent = 'No se puede sincronizar: Supabase o la conexión no están disponibles. No se ha guardado la imagen. ❌'; return; } const wall = walls[wallIndex]; if (!wall) return; if ($('#gallery-status')) $('#gallery-status').textContent = `Sincronizando imagen del muro ${wall.slot || wallIndex + 1}...`; try { const path = `muro-${wall.slot || wallIndex + 1}/${Date.now()}-${file.name.replace(/[^a-z0-9.]/gi, '-')}`; const { error: uploadError } = await window.archiveClient.storage.from(config.supabase.galleryBucket).upload(path, file, { upsert: true }); if (uploadError) throw uploadError; const { data: publicData } = window.archiveClient.storage.from(config.supabase.galleryBucket).getPublicUrl(path); const imageUrl = publicData.publicUrl; const payload = { slot: wall.slot || wallIndex + 1, title: wall.title || `Muro ${wallIndex + 1}`, caption: wall.caption || '', image_url: imageUrl }; const result = wall.id ? await window.archiveClient.from(config.supabase.galleryTable).update({ image_url: imageUrl, slot: payload.slot }).eq('id', wall.id) : await window.archiveClient.from(config.supabase.galleryTable).insert(payload).select().single(); if (result.error) throw result.error; if (result.data?.id) wall.id = result.data.id; wall.slot = payload.slot; wall.image = imageUrl; renderWall(); if ($('#gallery-status')) $('#gallery-status').textContent = `Supabase · muro ${payload.slot} sincronizado`; } catch (error) { if ($('#gallery-status')) $('#gallery-status').textContent = 'No se pudo sincronizar la imagen. No se ha guardado nada. Revisa Storage, tabla y permisos.'; console.error(error); } }
 async function saveNote(event) { event.preventDefault(); const form = event.currentTarget; const submit = form.querySelector('button[type="submit"]'); const values = Object.fromEntries(new FormData(form)); const noteText = String(values.message || '').trim(); if (!noteText) { showFormMessage('No se puede enviar un mensaje vacío. Escribe algo antes de continuar. ❤️', 'error'); form.elements.message.focus(); return; } if (supabaseStatus !== 'ready' || !window.archiveClient || !navigator.onLine) { showFormMessage('No se puede enviar: Supabase o la conexión no están disponibles. No se ha enviado nada. ❌', 'error'); return; } form.classList.add('is-sending'); if (submit) submit.disabled = true; showFormMessage('Enviando mensaje...', 'pending'); try { const payload = { [config.supabase.commentsMessageColumn || 'message']: noteText }; const { error } = await window.archiveClient.from(config.supabase.commentsTable).insert(payload); if (error) throw error; showFormMessage('Mensaje enviado correctamente. ❤️', 'success'); form.reset(); } catch (error) { supabaseStatus = 'error'; showFormMessage('No se pudo enviar: la tabla de comentarios o la API tienen un error. No se ha guardado nada.', 'error'); console.error(error); } finally { form.classList.remove('is-sending'); if (submit) submit.disabled = false; } }
 if ($('#prev-wall')) $('#prev-wall').addEventListener('click', () => { wallIndex = (wallIndex - 1 + walls.length) % walls.length; renderWall(); }); if ($('#next-wall')) $('#next-wall').addEventListener('click', () => { wallIndex = (wallIndex + 1) % walls.length; renderWall(); }); if ($('#note-form')) $('#note-form').addEventListener('submit', saveNote);
-function showAccess(title = randomAccessTitle(), copy = texts.accessCopy) { $('#access-title').innerHTML = title; $('#access-copy').textContent = copy; if ($('#access-random')) $('#access-random').textContent = randomPinMessage(); $('#access-screen').classList.remove('hidden'); $('#access-screen').classList.add('visible'); $('#access-screen').setAttribute('aria-hidden', 'false'); setTimeout(() => $('#pin-input').focus(), 100); }
-function hideAccess() { $('#access-screen').classList.remove('visible'); $('#access-screen').classList.add('hidden'); $('#access-screen').setAttribute('aria-hidden', 'true'); $('#pin-input').value = ''; $('#pin-message').textContent = ''; }
+function showAccess(title = randomAccessTitle(), copy = texts.accessCopy) { $('#access-title').innerHTML = title; $('#access-copy').textContent = copy; if ($('#access-random')) $('#access-random').textContent = randomPinMessage(); $('#access-screen').classList.remove('hidden'); $('#access-screen').classList.add('visible'); $('#access-screen').setAttribute('aria-hidden', 'false'); document.body.classList.add('access-locked'); setTimeout(() => $('#pin-input').focus(), 100); }
+function hideAccess() { $('#access-screen').classList.remove('visible'); $('#access-screen').classList.add('hidden'); $('#access-screen').setAttribute('aria-hidden', 'true'); document.body.classList.remove('access-locked'); $('#pin-input').value = ''; $('#pin-message').textContent = ''; }
 $('#pin-form').addEventListener('submit', event => {
   event.preventDefault();
   const enteredPin = $('#pin-input').value;
-  const developerAccess = enteredPin === config.developerPin;
+  const developerAccess = isHomePage && homePinProfile === 'developer' && enteredPin === config.developerPin;
+  const profileAccess = isHomePage ? homePinProfile === 'ella' && enteredPin === config.accessPin : enteredPin === config.accessPin;
   const currentLetter = document.body.classList.contains('letter-page') ? $('.full-letter') : null;
   const releaseDate = currentLetter ? getLetterReleaseDate(currentLetter) : null;
   const letterIsLocked = releaseDate && releaseDate > getToday() && !isDeveloperMode();
@@ -366,7 +434,7 @@ $('#pin-form').addEventListener('submit', event => {
     hideAccess();
     if (document.body.classList.contains('page-cartas')) location.reload();
     else if (destination) setTimeout(() => document.querySelector(destination)?.scrollIntoView({ behavior: 'smooth' }), 50);
-  } else if (enteredPin === config.accessPin && !letterIsLocked) {
+  } else if (profileAccess && !letterIsLocked) {
     const destination = event.currentTarget.dataset.destination;
     delete event.currentTarget.dataset.destination;
     hideAccess();
@@ -384,10 +452,48 @@ const promptedSections = new Set();
 const sectionObserver = new IntersectionObserver(entries => entries.forEach(entry => { if (entry.isIntersecting && entry.intersectionRatio > 0.42 && !promptedSections.has(entry.target.id)) { promptedSections.add(entry.target.id); showAccess(system.sectionAccessTitle, system.sectionAccessCopy); } }), { threshold: [0.42] });
 document.querySelectorAll('main > section:not(.hero)').forEach(section => sectionObserver.observe(section));
 window.addEventListener('load', () => { if (isHomePage) setTimeout(() => { $('#loader').classList.add('done'); }, 2600); });
-clearWebCache()
-  .catch(error => console.warn('No se pudo limpiar la caché web.', error))
-  .finally(() => {
-    if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('./sw.js');
-  });
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  navigator.serviceWorker.register('./sw.js').then(registration => registration.update()).catch(error => console.warn('No se pudo actualizar la caché web.', error));
+}
 let deferredInstall; window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); deferredInstall = event; if ($('#install-button')) $('#install-button').hidden = false; }); if ($('#install-button')) $('#install-button').addEventListener('click', async () => { if (!deferredInstall) return; deferredInstall.prompt(); deferredInstall = null; $('#install-button').hidden = true; });
 document.querySelectorAll('.notes-grid .love-line').forEach((element, index) => { if (index > 0) element.remove(); });
+
+let galleryRefreshPromise = null;
+async function refreshGalleryFromSupabase() {
+  if (!$('#gallery-stage') || !window.archiveClient || !navigator.onLine || galleryRefreshPromise) return galleryRefreshPromise;
+  const settings = config.supabase;
+  galleryRefreshPromise = (async () => {
+    if ($('#gallery-status')) $('#gallery-status').textContent = 'Sincronizando galería...';
+    const { data, error } = await window.archiveClient.from(settings.galleryTable).select('*').order('created_at', { ascending: true });
+    if (error) throw error;
+    const rows = (data || []).filter(row => Number.isFinite(Number(row.slot)));
+    const syncedBySlot = new Map(rows.map(row => [Number(row.slot), row]));
+    walls = fallbackWalls.map(fallback => {
+      const row = syncedBySlot.get(fallback.slot);
+      if (!row) return { ...fallback };
+      syncedBySlot.delete(fallback.slot);
+      return { ...fallback, ...row, slot: fallback.slot, title: row.title || fallback.title, caption: row.caption || fallback.caption, image: row.image_url || fallback.image };
+    });
+    syncedBySlot.forEach(row => walls.push({ ...row, slot: Number(row.slot), title: row.title || `Muro ${row.slot}`, caption: row.caption || '', image: row.image_url || '' }));
+    wallIndex = Math.min(wallIndex, Math.max(walls.length - 1, 0));
+    renderWall();
+    if ($('#gallery-status')) $('#gallery-status').textContent = rows.length ? `Supabase · ${rows.length} muro${rows.length === 1 ? '' : 's'} sincronizado${rows.length === 1 ? '' : 's'}` : 'Supabase · sin muros, mostrando archivo local';
+    if (!$('#gallery-stage').dataset.galleryRealtimeBound) {
+      window.archiveClient.channel('gallery-live').on('postgres_changes', { event: '*', schema: 'public', table: settings.galleryTable }, () => refreshGalleryFromSupabase().catch(() => {})).subscribe();
+      $('#gallery-stage').dataset.galleryRealtimeBound = 'true';
+    }
+  })().catch(error => {
+    if ($('#gallery-status')) $('#gallery-status').textContent = 'Supabase · mostrando el archivo local';
+    console.warn('No se pudo sincronizar la galería.', error);
+  }).finally(() => { galleryRefreshPromise = null; });
+  return galleryRefreshPromise;
+}
+window.archiveGalleryRefresh = refreshGalleryFromSupabase;
+document.querySelector('.access-logo')?.addEventListener('error', event => { event.currentTarget.replaceWith(document.createTextNode('FA')); }, { once: true });
+if ($('#gallery-stage')) {
+  const refreshTimer = window.setInterval(() => {
+    if (!window.archiveClient) return;
+    window.clearInterval(refreshTimer);
+    refreshGalleryFromSupabase();
+  }, 250);
+}

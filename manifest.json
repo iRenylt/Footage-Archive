@@ -6,5 +6,12 @@
   "background_color": "#101114",
   "theme_color": "#101114",
   "description": "Un archivo íntimo de recuerdos, cartas y canciones.",
-  "icons": []
+  "icons": [
+    {
+      "src": "https://xcjzydmprmbpbqkacjwb.supabase.co/storage/v1/object/public/avatars/avatar.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
 }
