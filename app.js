@@ -8,6 +8,13 @@ async function clearWebCache() {
 }
 window.clearWebCache = clearWebCache;
 
+// Keep pinch gestures from zooming the archive on touch browsers.
+document.addEventListener('gesturestart', event => event.preventDefault(), { passive: false });
+document.addEventListener('gesturechange', event => event.preventDefault(), { passive: false });
+document.addEventListener('touchmove', event => {
+  if (event.touches.length > 1) event.preventDefault();
+}, { passive: false });
+
 try {
   window.history.scrollRestoration = 'manual';
 } catch {}
