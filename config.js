@@ -22,7 +22,7 @@ window.APP_CONFIG = {
       morning: "Buenos días",
       afternoon: "Buenas tardes",
       evening: "Buenas noches",
-      wrongPin: "Código incorrecto. Intenta de nuevo. ❤️",
+      wrongPin: "Código incorrecto. Intenta de nuevo. ·",
       sectionAccessTitle: "Antes de continuar,<br><em>una clave.</em>",
       sectionAccessCopy: "Cada sección guarda una pequeña sorpresa.",
       loadingFallback: "Cargando recuerdos...",

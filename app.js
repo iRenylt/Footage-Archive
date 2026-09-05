@@ -22,14 +22,24 @@ function resetPageScroll() {
   const root = document.documentElement;
   const previousBehavior = root.style.scrollBehavior;
   root.style.scrollBehavior = 'auto';
-  window.scrollTo(0, 0);
+  window.scrollTo({ left: 0, top: 0, behavior: 'instant' });
   root.scrollTop = 0;
   document.body.scrollTop = 0;
   root.style.scrollBehavior = previousBehavior;
 }
+function schedulePageScrollReset() {
+  resetPageScroll();
+  window.requestAnimationFrame(() => {
+    resetPageScroll();
+    window.requestAnimationFrame(resetPageScroll);
+  });
+  window.setTimeout(resetPageScroll, 120);
+}
 resetPageScroll();
-window.addEventListener('load', resetPageScroll);
-window.addEventListener('pageshow', resetPageScroll);
+window.addEventListener('DOMContentLoaded', schedulePageScrollReset, { once: true });
+window.addEventListener('load', schedulePageScrollReset, { once: true });
+window.addEventListener('pageshow', schedulePageScrollReset);
+window.addEventListener('popstate', schedulePageScrollReset);
 
 const config = window.APP_CONFIG;
 const content = window.ARCHIVE_CONTENT || {};
@@ -47,54 +57,98 @@ const texts = content.texts || config.texts || {};
 const system = texts.system || {};
 const fallbackWalls = (content.galleryFallback || config.galleryFallback || []).map((wall, index) => ({ ...wall, slot: index + 1 }));
 let walls = fallbackWalls.map(wall => ({ ...wall })); let wallIndex = 0;
+const wallDefaultTitleColor = '#fff7f3';
+const wallDefaultCaptionColor = '#f2dfe0';
+function normalizeWallColor(value, fallback) { return /^#[0-9a-f]{6}$/i.test(String(value || '')) ? value : fallback; }
+function applyWallColors(wall) {
+  const titleColor = normalizeWallColor(wall.title_color || wall.titleColor, wallDefaultTitleColor);
+  const captionColor = normalizeWallColor(wall.caption_color || wall.captionColor, wallDefaultCaptionColor);
+  const title = document.querySelector('.gallery-copy h3');
+  const caption = document.querySelector('.gallery-copy p');
+  if (title) title.style.color = titleColor;
+  if (caption) caption.style.color = captionColor;
+  return { titleColor, captionColor };
+}
 let supabaseStatus = 'idle';
 window.addEventListener('offline', () => { supabaseStatus = 'error'; if ($('#note-form')) showFormMessage('Sin conexión.', 'error'); if ($('#gallery-status')) $('#gallery-status').textContent = 'Sin conexión'; });
 window.addEventListener('online', () => { if (config.supabase.url && config.supabase.anonKey && window.archiveClient) { supabaseStatus = 'ready'; if ($('#note-form')) showFormMessage('Conexión recuperada.', 'success'); window.archiveGalleryRefresh?.(); } });
 document.querySelectorAll('#guide-button').forEach(element => element.remove());
-bindCreditsPanel();
-document.documentElement.style.setProperty('--paper', '#e7e4dc');
-document.documentElement.style.setProperty('--soft', '#c7c5be');
-document.documentElement.style.setProperty('--muted', '#9b9b95');
-document.documentElement.style.setProperty('--acid', '#a8a8a1');
-document.documentElement.style.setProperty('--line', 'rgba(231,228,220,.18)');
+document.documentElement.style.setProperty('--paper', '#f4f5f7');
+document.documentElement.style.setProperty('--soft', '#d0d5dc');
+document.documentElement.style.setProperty('--muted', '#929aa5');
+document.documentElement.style.setProperty('--acid', '#eef1f4');
+document.documentElement.style.setProperty('--line', 'rgba(255,255,255,.18)');
 document.body.style.backgroundColor = '#101114';
 const isHomePage = document.body.classList.contains('page-home') || location.pathname.endsWith('/index.html') || location.pathname.endsWith('/');
 if (isHomePage) sessionStorage.removeItem('archiveDeveloperMode');
 const menuMessages = system.menuMessages?.length ? system.menuMessages : [config.intro];
 const randomMenuMessage = () => menuMessages[0];
 
-function bindCreditsPanel() {
+let presenceChannel = null;
+let presenceWatcher = null;
+const presenceMessages = [
+  'Alguien más está mirando este archivo.',
+  'Dos visitas, una pequeña señal.',
+  'La memoria acaba de encenderse en otro lugar.',
+  'Hay alguien al otro lado de esta página.',
+  'El archivo tiene compañía.'
+];
+bindPresenceUi();
+function bindPresenceUi() {
   const topbar = document.querySelector('.topbar');
-  if (!topbar || topbar.querySelector('#credits-button')) return;
-  const actions = topbar.querySelector('.top-actions') || topbar;
-  const button = document.createElement('button');
-  button.id = 'credits-button';
-  button.className = 'credits-button';
-  button.type = 'button';
-  button.innerHTML = 'Créditos <span>✦</span>';
-  actions.append(button);
-
-  const openCredits = () => {
-    if (document.querySelector('.credits-panel')) return;
-    const panel = document.createElement('div');
-    panel.className = 'credits-panel';
-    panel.setAttribute('role', 'dialog');
-    panel.setAttribute('aria-modal', 'true');
-    panel.setAttribute('aria-labelledby', 'credits-title');
-    panel.innerHTML = `<div class="credits-sheet"><button class="credits-close" type="button" aria-label="Cerrar créditos">×</button><p class="eyebrow">FOOTAGE ARCHIVE · CRÉDITOS</p><h2 id="credits-title">Hecho con<br><em>memoria.</em></h2><div class="credits-grid"><article><span>DESARROLLADOR</span><strong>iRenyKn (Diego)</strong><p>La idea, la historia y la mirada detrás de este archivo.</p></article><article><span>SELLO</span><strong>Registros Fantasmas</strong><p>La firma emocional, el nombre y la atmósfera del proyecto.</p></article></div><p class="credits-final">Gracias por entrar a este espacio.<br>Lo más especial de este archivo es que existe porque nosotros existimos.</p></div>`;
-    document.body.append(panel);
-    document.body.classList.add('modal-locked');
-    const close = () => {
-      panel.remove();
-      document.body.classList.remove('modal-locked');
-    };
-    panel.querySelector('.credits-close').addEventListener('click', close);
-    panel.addEventListener('click', event => { if (event.target === panel) close(); });
-    document.addEventListener('keydown', function closeCredits(event) {
-      if (event.key === 'Escape') { close(); document.removeEventListener('keydown', closeCredits); }
-    }, { once: true });
+  if (!topbar || topbar.querySelector('.presence-widget')) return;
+  const widget = document.createElement('div');
+  widget.className = 'presence-widget';
+  widget.setAttribute('aria-label', 'Presencia en el archivo');
+  widget.innerHTML = '<button class="presence-dot presence-self" type="button" data-presence="self" aria-label="Tu conexión: activa"><span class="presence-light"></span><span class="presence-label">Tú</span></button><button class="presence-dot presence-visitor" type="button" data-presence="visitor" aria-label="Otra visita: nadie conectado"><span class="presence-light"></span><span class="presence-label">Otra visita</span></button>';
+  const actions = topbar.querySelector('.top-actions');
+  (actions || topbar).append(widget);
+  widget.querySelectorAll('.presence-dot').forEach(button => button.addEventListener('click', () => {
+    const message = button.dataset.presence === 'visitor' && button.classList.contains('is-online')
+      ? presenceMessages[Math.floor(Math.random() * presenceMessages.length)]
+      : button.dataset.presence === 'self' ? 'Tu presencia está encendida aquí.' : 'Todavía no hay otra visita.';
+    showPresenceMessage(message);
+  }));
+  const setSelfOnline = online => {
+    const self = widget.querySelector('.presence-self');
+    self.classList.toggle('is-online', online);
+    self.setAttribute('aria-label', `Tu conexión: ${online ? 'activa' : 'inactiva'}`);
   };
-  button.addEventListener('click', openCredits);
+  const setVisitorCount = count => {
+    const visitor = widget.querySelector('.presence-visitor');
+    const online = count > 0;
+    visitor.classList.toggle('is-online', online);
+    visitor.setAttribute('aria-label', `Otra visita: ${online ? `${count} conectada${count === 1 ? '' : 's'}` : 'nadie conectado'}`);
+  };
+  setSelfOnline(true);
+  setVisitorCount(0);
+  presenceWatcher = window.setInterval(() => {
+    if (!window.archiveClient || presenceChannel) return;
+    clearInterval(presenceWatcher);
+    presenceWatcher = null;
+    const ownPresenceKey = `visitor-${Math.random().toString(36).slice(2)}`;
+    presenceChannel = window.archiveClient.channel('footage-archive-presence', { config: { presence: { key: ownPresenceKey } } });
+    const updatePresence = () => {
+      const state = presenceChannel.presenceState();
+      const remoteCount = Object.keys(state).reduce((total, key) => total + (key === ownPresenceKey ? 0 : state[key].length), 0);
+      setVisitorCount(remoteCount);
+    };
+    presenceChannel.on('presence', { event: 'sync' }, updatePresence).subscribe(async status => {
+      if (status === 'SUBSCRIBED') {
+        await presenceChannel.track({ online_at: new Date().toISOString() });
+        updatePresence();
+      }
+    });
+  }, 250);
+}
+function showPresenceMessage(message) {
+  document.querySelector('.presence-toast')?.remove();
+  const toast = document.createElement('div');
+  toast.className = 'presence-toast';
+  toast.setAttribute('role', 'status');
+  toast.innerHTML = `<span class="presence-toast-heart">&#9829;</span><span>${message}</span>`;
+  document.body.append(toast);
+  window.setTimeout(() => toast.remove(), 3600);
 }
 
 function syncViewportHeight() {
@@ -118,7 +172,7 @@ const renderLogo = () => logoMarks.forEach(mark => {
   mark.querySelector('img').addEventListener('error', () => { mark.textContent = 'FA'; }, { once: true });
 });
 renderLogo();
-if ($('#brand-name')) $('#brand-name').textContent = config.name; if ($('#hero-title')) $('#hero-title').innerHTML = texts.home?.heroTitle || 'Footage<br><em>Archive.</em>'; if ($('#hero-intro')) $('#hero-intro').textContent = config.intro; if ($('#footer-signature')) $('#footer-signature').textContent = config.signature; if ($('#spotify')) $('#spotify').src = config.spotifyEmbed; if ($('#hero-intro') && !$('#last-updated')) { const updateNote = document.createElement('p'); updateNote.className = 'update-note'; updateNote.innerHTML = 'Se actualiza entre días · <time id="last-updated"></time>'; $('#hero-intro').after(updateNote); } if ($('#last-updated')) { const fileDate = new Date(document.lastModified); const updateDate = Number.isNaN(fileDate.getTime()) ? new Date(config.lastUpdated) : fileDate; $('#last-updated').textContent = updateDate.toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' }); } if (document.body.classList.contains('page-notas')) { const notesTitle = document.querySelector('.notes-grid h1'); if (notesTitle) { notesTitle.textContent = texts.notes?.greetingName || 'Nohelia'; const loveTitle = document.createElement('h2'); loveTitle.className = 'love-line'; loveTitle.innerHTML = texts.notes?.loveTitle || 'El Amor de<br><em>Mi Vida.</em>'; notesTitle.after(loveTitle); } } if ($('.full-letter')) renderLetterPage(); if ($('#gallery-stage')) renderWall(); if ($('#gallery-stage') || $('#note-form')) setupSupabase(); if ($('#image-picker')) $('#image-picker').addEventListener('change', changeWallImage); if ($('#note-form')) { const nameInput = $('#note-form').querySelector('[name="name"]'); if (nameInput) nameInput.closest('label').remove(); const noteInput = $('#note-form').querySelector('[name="message"]'); if (noteInput) { noteInput.placeholder = texts.notes?.messagePlaceholder || 'Escribe algo bonito para ella...'; noteInput.closest('label').firstChild.textContent = texts.notes?.messageLabel || 'Tu mensaje'; } }
+if ($('#brand-name')) $('#brand-name').textContent = config.name; if ($('#hero-title')) $('#hero-title').innerHTML = texts.home?.heroTitle || 'Footage<br><em>Archive.</em>'; if ($('#hero-intro')) $('#hero-intro').textContent = config.intro; if ($('#footer-signature')) $('#footer-signature').textContent = config.signature; if ($('#spotify')) $('#spotify').src = config.spotifyEmbed; if ($('#hero-intro') && !$('#last-updated')) { const updateNote = document.createElement('p'); updateNote.className = 'update-note'; updateNote.innerHTML = 'Se actualiza entre días · <time id="last-updated"></time>'; $('#hero-intro').after(updateNote); } if ($('#last-updated')) { const fileDate = new Date(document.lastModified); const updateDate = Number.isNaN(fileDate.getTime()) ? new Date(config.lastUpdated) : fileDate; $('#last-updated').textContent = updateDate.toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' }); } if (document.body.classList.contains('page-notas')) { const notesTitle = document.querySelector('.notes-grid h1'); if (notesTitle) { notesTitle.textContent = texts.notes?.greetingName || 'Nohelia'; const loveTitle = document.createElement('h2'); loveTitle.className = 'love-line'; loveTitle.innerHTML = texts.notes?.loveTitle || 'El Amor de<br><em>Mi Vida.</em>'; notesTitle.after(loveTitle); } } if ($('.full-letter')) renderLetterPage(); if ($('#gallery-stage')) renderWall(); if (document.querySelector('#gallery-stage') || document.querySelector('#note-form') || document.querySelector('.presence-widget')) setupSupabase(); if ($('#image-picker')) $('#image-picker').addEventListener('change', changeWallImage); if ($('#note-form')) { const nameInput = $('#note-form').querySelector('[name="name"]'); if (nameInput) nameInput.closest('label').remove(); const noteInput = $('#note-form').querySelector('[name="message"]'); if (noteInput) { noteInput.placeholder = texts.notes?.messagePlaceholder || 'Escribe algo bonito para ella...'; noteInput.closest('label').firstChild.textContent = texts.notes?.messageLabel || 'Tu mensaje'; } }
 if ($('#note-form')) {
   const notesTitle = document.querySelector('.notes-grid h1[data-html-content]');
   if (notesTitle) notesTitle.innerHTML = notesTitle.dataset.htmlContent;
@@ -289,7 +343,7 @@ function applyLetterPageLock() {
   accessScreen.setAttribute('aria-hidden', 'false');
   if ($('#access-title')) $('#access-title').innerHTML = 'Carta<br><em>bloqueada.</em>';
   if ($('#access-copy')) $('#access-copy').textContent = `Esta carta se desbloqueará el ${formatReleaseDate(releaseDate)}.`;
-  if ($('#access-random')) $('#access-random').textContent = 'Vuelve cuando llegue su fecha. 💗';
+  if ($('#access-random')) $('#access-random').textContent = 'Vuelve cuando llegue su fecha. ·';
 }
 
 function renderLetterPage() {
@@ -324,9 +378,9 @@ function renderWall() {
   const stage = $('#gallery-stage');
   if (!stage) return;
   if (!stage.querySelector('.wall-image-button')) {
-    stage.innerHTML = `<button class="wall-image-button" id="change-image" type="button"><img src="" alt=""><span>presiona para cambiar</span></button><div class="gallery-copy"><h3></h3><p></p></div><button class="wall-edit-toggle" id="edit-wall-toggle" type="button">Editar muro</button><form class="wall-edit-form" id="wall-edit-form" hidden><label>Título<input name="title" maxlength="80" required></label><label>Descripción<textarea name="caption" maxlength="240" rows="3" required></textarea></label><div><button type="submit" class="wall-edit-save">Guardar cambios</button><button type="button" class="wall-edit-cancel">Cancelar</button></div><p class="wall-edit-message" role="status"></p></form>`;
+    stage.innerHTML = `<button class="wall-image-button" id="change-image" type="button"><img src="" alt=""><span>presiona para cambiar</span></button><div class="gallery-copy"><h3></h3><p></p></div>`;
   }
-  if (!stage.querySelector('.wall-edit-form')) stage.insertAdjacentHTML('beforeend', '<button class="wall-edit-toggle" id="edit-wall-toggle" type="button">Editar muro</button><form class="wall-edit-form" id="wall-edit-form" hidden><label>Título<input name="title" maxlength="80" required></label><label>Descripción<textarea name="caption" maxlength="240" rows="3" required></textarea></label><div><button type="submit" class="wall-edit-save">Guardar cambios</button><button type="button" class="wall-edit-cancel">Cancelar</button></div><p class="wall-edit-message" role="status"></p></form>');
+  if (!$('#wall-edit-form')) stage.insertAdjacentHTML('afterend', '<button class="wall-edit-toggle" id="edit-wall-toggle" type="button">Editar muro</button><form class="wall-edit-form" id="wall-edit-form" hidden><label>Título<input name="title" maxlength="80" required></label><label>Descripción<textarea name="caption" maxlength="240" rows="3" required></textarea></label><div><button type="submit" class="wall-edit-save">Guardar cambios</button><button type="button" class="wall-edit-cancel">Cancelar</button></div><p class="wall-edit-message" role="status"></p></form>');
   const imageButton = $('#change-image');
   if (imageButton && !imageButton.dataset.imagePickerBound) {
     imageButton.addEventListener('click', () => $('#image-picker')?.click());
@@ -342,15 +396,33 @@ function renderWall() {
   stage.querySelector('.gallery-copy p').textContent = wall.caption;
   $('#wall-count').textContent = `${String(wallIndex + 1).padStart(2, '0')} / ${String(walls.length).padStart(2, '0')}`;
   const editForm = $('#wall-edit-form');
+  if (editForm && !editForm.querySelector('.wall-color-fields')) {
+    const colorFields = document.createElement('div');
+    colorFields.className = 'wall-color-fields';
+    colorFields.innerHTML = `<label>Color del título<input name="titleColor" type="color" value="${wallDefaultTitleColor}"></label><label>Color de la descripción<input name="captionColor" type="color" value="${wallDefaultCaptionColor}"></label>`;
+    editForm.querySelector('div').before(colorFields);
+  }
+  const colors = applyWallColors(wall);
   if (editForm && !editForm.dataset.bound) {
     $('#edit-wall-toggle').addEventListener('click', () => {
       editForm.elements.title.value = walls[wallIndex].title || '';
       editForm.elements.caption.value = walls[wallIndex].caption || '';
+      editForm.elements.titleColor.value = normalizeWallColor(walls[wallIndex].title_color || walls[wallIndex].titleColor, wallDefaultTitleColor);
+      editForm.elements.captionColor.value = normalizeWallColor(walls[wallIndex].caption_color || walls[wallIndex].captionColor, wallDefaultCaptionColor);
       editForm.hidden = false;
+      document.body.classList.add('wall-edit-open');
       $('#edit-wall-toggle').hidden = true;
       editForm.elements.title.focus();
     });
-    editForm.querySelector('.wall-edit-cancel').addEventListener('click', () => { editForm.hidden = true; $('#edit-wall-toggle').hidden = false; });
+    editForm.querySelector('.wall-edit-cancel').addEventListener('click', () => { editForm.hidden = true; document.body.classList.remove('wall-edit-open'); $('#edit-wall-toggle').hidden = false; });
+    const updatePreviewColors = () => {
+      const currentWall = walls[wallIndex];
+      currentWall.title_color = normalizeWallColor(editForm.elements.titleColor.value, wallDefaultTitleColor);
+      currentWall.caption_color = normalizeWallColor(editForm.elements.captionColor.value, wallDefaultCaptionColor);
+      applyWallColors(currentWall);
+    };
+    editForm.elements.titleColor.addEventListener('input', updatePreviewColors);
+    editForm.elements.captionColor.addEventListener('input', updatePreviewColors);
     editForm.addEventListener('submit', saveWallText);
     editForm.dataset.bound = 'true';
   }
@@ -365,6 +437,8 @@ async function saveWallText(event) {
   const wall = walls[wallIndex];
   const title = String(form.elements.title.value || '').trim();
   const caption = String(form.elements.caption.value || '').trim();
+  const titleColor = normalizeWallColor(form.elements.titleColor.value, wallDefaultTitleColor);
+  const captionColor = normalizeWallColor(form.elements.captionColor.value, wallDefaultCaptionColor);
   const message = form.querySelector('.wall-edit-message');
   if (!title || !caption) { if (message) message.textContent = 'Completa el título y la descripción.'; return; }
   if (supabaseStatus !== 'ready' || !window.archiveClient || !navigator.onLine) { if (message) message.textContent = 'Supabase no está disponible.'; return; }
@@ -372,17 +446,20 @@ async function saveWallText(event) {
   if (saveButton) saveButton.disabled = true;
   if (message) message.textContent = 'Guardando...';
   try {
-    const payload = { slot: wall.slot || wallIndex + 1, title, caption, image_url: wall.image || '' };
+    const payload = { slot: wall.slot || wallIndex + 1, title, caption, title_color: titleColor, caption_color: captionColor, image_url: wall.image || '' };
     const result = wall.id
-      ? await window.archiveClient.from(config.supabase.galleryTable).update({ title, caption }).eq('id', wall.id).select().single()
+      ? await window.archiveClient.from(config.supabase.galleryTable).update({ title, caption, title_color: titleColor, caption_color: captionColor }).eq('id', wall.id).select().single()
       : await window.archiveClient.from(config.supabase.galleryTable).insert(payload).select().single();
     if (result.error) throw result.error;
     wall.title = title;
     wall.caption = caption;
+    wall.title_color = titleColor;
+    wall.caption_color = captionColor;
     if (result.data?.id) wall.id = result.data.id;
     renderWall();
     if (message) message.textContent = 'Cambios guardados.';
     form.hidden = true;
+    document.body.classList.remove('wall-edit-open');
     $('#edit-wall-toggle').hidden = false;
   } catch (error) {
     if (message) message.textContent = 'No se pudieron guardar los cambios.';
@@ -395,7 +472,7 @@ function setupSupabase() {
   supabaseStatus = 'connecting';
   if ($('#comments-board')) setupComments(settings);
   if (window.archiveClient) return;
-  const script = document.createElement('script'); script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2'; script.onload = async () => { try { window.archiveClient = window.supabase.createClient(settings.url, settings.anonKey, { global: { fetch: (input, init = {}) => fetch(input, { ...init, cache: 'no-store' }) } }); supabaseStatus = 'ready'; if ($('#note-form')) showFormMessage('Conexión lista · tus mensajes se guardarán en Supabase. ✅', 'success'); if ($('#gallery-stage')) { const { data, error } = await window.archiveClient.from(settings.galleryTable).select('*').order('created_at', { ascending: true }); if (error) throw error; if (data?.length) { const syncedWalls = fallbackWalls.map(fallback => { const item = data.find(row => Number(row.slot) === fallback.slot); return item ? { ...fallback, id: item.id, title: item.title || fallback.title, caption: item.caption || fallback.caption, image: item.image_url || fallback.image } : { ...fallback }; }); walls = syncedWalls; wallIndex = 0; renderWall(); $('#gallery-status').textContent = `Supabase · ${data.length} muro${data.length === 1 ? '' : 's'} sincronizado${data.length === 1 ? '' : 's'} de ${walls.length}`; } } } catch (error) { if ($('#gallery-stage')) $('#gallery-status').textContent = 'Supabase · revisa galleryTable y sus permisos'; if ($('#note-form')) showFormMessage('Conexión lista, pero la tabla de imágenes tiene un error. Los mensajes siguen disponibles.', 'error'); console.error(error); } }; script.onerror = () => { supabaseStatus = 'error'; if ($('#gallery-status')) $('#gallery-status').textContent = 'No se pudo cargar el cliente de Supabase'; if ($('#note-form')) showFormMessage('No se pudo cargar Supabase. No se enviarán mensajes hasta recuperar la conexión.', 'error'); }; document.head.appendChild(script);
+  const script = document.createElement('script'); script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2'; script.onload = async () => { try { window.archiveClient = window.supabase.createClient(settings.url, settings.anonKey, { global: { fetch: (input, init = {}) => fetch(input, { ...init, cache: 'no-store' }) } }); supabaseStatus = 'ready'; if ($('#note-form')) showFormMessage('Conexión lista · tus mensajes se guardarán en Supabase. ✅', 'success'); if ($('#gallery-stage')) { const { data, error } = await window.archiveClient.from(settings.galleryTable).select('*').order('created_at', { ascending: true }); if (error) throw error; if (data?.length) { const syncedWalls = fallbackWalls.map(fallback => { const item = data.find(row => Number(row.slot) === fallback.slot); return item ? { ...fallback, id: item.id, title: item.title || fallback.title, caption: item.caption || fallback.caption, image: item.image_url || fallback.image } : { ...fallback }; }); syncedWalls.forEach(syncedWall => { const item = data.find(row => Number(row.slot) === syncedWall.slot); if (item) { syncedWall.title_color = item.title_color; syncedWall.caption_color = item.caption_color; } }); walls = syncedWalls; wallIndex = 0; renderWall(); $('#gallery-status').textContent = `Supabase · ${data.length} muro${data.length === 1 ? '' : 's'} sincronizado${data.length === 1 ? '' : 's'} de ${walls.length}`; } } } catch (error) { if ($('#gallery-stage')) $('#gallery-status').textContent = 'Supabase · revisa galleryTable y sus permisos'; if ($('#note-form')) showFormMessage('Conexión lista, pero la tabla de imágenes tiene un error. Los mensajes siguen disponibles.', 'error'); console.error(error); } }; script.onerror = () => { supabaseStatus = 'error'; if ($('#gallery-status')) $('#gallery-status').textContent = 'No se pudo cargar el cliente de Supabase'; if ($('#note-form')) showFormMessage('No se pudo cargar Supabase. No se enviarán mensajes hasta recuperar la conexión.', 'error'); }; document.head.appendChild(script);
 }
 let commentsRefreshTimer;
 let commentsExpanded = false;
@@ -445,7 +522,7 @@ function setupComments(settings) {
 }
 function showFormMessage(text, type = 'error') { const message = $('#form-message'); if (!message) return; message.textContent = text; message.className = `form-message ${type}`; message.setAttribute('role', 'status'); }
 async function changeWallImage(event) { const file = event.target.files[0]; event.target.value = ''; if (!file) return; if (!file.type.startsWith('image/')) { if ($('#gallery-status')) $('#gallery-status').textContent = 'Selecciona un archivo de imagen válido. ❌'; return; } if (supabaseStatus !== 'ready' || !window.archiveClient || !navigator.onLine) { if ($('#gallery-status')) $('#gallery-status').textContent = 'No se puede sincronizar: Supabase o la conexión no están disponibles. No se ha guardado la imagen. ❌'; return; } const wall = walls[wallIndex]; if (!wall) return; if ($('#gallery-status')) $('#gallery-status').textContent = `Sincronizando imagen del muro ${wall.slot || wallIndex + 1}...`; try { const path = `muro-${wall.slot || wallIndex + 1}/${Date.now()}-${file.name.replace(/[^a-z0-9.]/gi, '-')}`; const { error: uploadError } = await window.archiveClient.storage.from(config.supabase.galleryBucket).upload(path, file, { upsert: true }); if (uploadError) throw uploadError; const { data: publicData } = window.archiveClient.storage.from(config.supabase.galleryBucket).getPublicUrl(path); const imageUrl = publicData.publicUrl; const payload = { slot: wall.slot || wallIndex + 1, title: wall.title || `Muro ${wallIndex + 1}`, caption: wall.caption || '', image_url: imageUrl }; const result = wall.id ? await window.archiveClient.from(config.supabase.galleryTable).update({ image_url: imageUrl, slot: payload.slot }).eq('id', wall.id) : await window.archiveClient.from(config.supabase.galleryTable).insert(payload).select().single(); if (result.error) throw result.error; if (result.data?.id) wall.id = result.data.id; wall.slot = payload.slot; wall.image = imageUrl; renderWall(); if ($('#gallery-status')) $('#gallery-status').textContent = `Supabase · muro ${payload.slot} sincronizado`; } catch (error) { if ($('#gallery-status')) $('#gallery-status').textContent = 'No se pudo sincronizar la imagen. No se ha guardado nada. Revisa Storage, tabla y permisos.'; console.error(error); } }
-async function saveNote(event) { event.preventDefault(); const form = event.currentTarget; const submit = form.querySelector('button[type="submit"]'); const values = Object.fromEntries(new FormData(form)); const noteText = String(values.message || '').trim(); if (!noteText) { showFormMessage('No se puede enviar un mensaje vacío. Escribe algo antes de continuar. ❤️', 'error'); form.elements.message.focus(); return; } if (supabaseStatus !== 'ready' || !window.archiveClient || !navigator.onLine) { showFormMessage('No se puede enviar: Supabase o la conexión no están disponibles. No se ha enviado nada. ❌', 'error'); return; } form.classList.add('is-sending'); if (submit) submit.disabled = true; showFormMessage('Enviando mensaje...', 'pending'); try { const payload = { [config.supabase.commentsMessageColumn || 'message']: noteText }; const { error } = await window.archiveClient.from(config.supabase.commentsTable).insert(payload); if (error) throw error; showFormMessage('Mensaje enviado correctamente. ❤️', 'success'); form.reset(); } catch (error) { supabaseStatus = 'error'; showFormMessage('No se pudo enviar: la tabla de comentarios o la API tienen un error. No se ha guardado nada.', 'error'); console.error(error); } finally { form.classList.remove('is-sending'); if (submit) submit.disabled = false; } }
+async function saveNote(event) { event.preventDefault(); const form = event.currentTarget; const submit = form.querySelector('button[type="submit"]'); const values = Object.fromEntries(new FormData(form)); const noteText = String(values.message || '').trim(); if (!noteText) { showFormMessage('No se puede enviar un mensaje vacío. Escribe algo antes de continuar. ·', 'error'); form.elements.message.focus(); return; } if (supabaseStatus !== 'ready' || !window.archiveClient || !navigator.onLine) { showFormMessage('No se puede enviar: Supabase o la conexión no están disponibles. No se ha enviado nada. ❌', 'error'); return; } form.classList.add('is-sending'); if (submit) submit.disabled = true; showFormMessage('Enviando mensaje...', 'pending'); try { const payload = { [config.supabase.commentsMessageColumn || 'message']: noteText }; const { error } = await window.archiveClient.from(config.supabase.commentsTable).insert(payload); if (error) throw error; showFormMessage('Mensaje enviado correctamente. ·', 'success'); form.reset(); } catch (error) { supabaseStatus = 'error'; showFormMessage('No se pudo enviar: la tabla de comentarios o la API tienen un error. No se ha guardado nada.', 'error'); console.error(error); } finally { form.classList.remove('is-sending'); if (submit) submit.disabled = false; } }
 if ($('#prev-wall')) $('#prev-wall').addEventListener('click', () => { wallIndex = (wallIndex - 1 + walls.length) % walls.length; renderWall(); }); if ($('#next-wall')) $('#next-wall').addEventListener('click', () => { wallIndex = (wallIndex + 1) % walls.length; renderWall(); }); if ($('#note-form')) $('#note-form').addEventListener('submit', saveNote);
 function showAccess(title = $('#access-title').innerHTML, copy = texts.accessCopy) { $('#access-title').innerHTML = title; $('#access-copy').textContent = copy; $('#access-screen').classList.remove('hidden'); $('#access-screen').classList.add('visible'); $('#access-screen').setAttribute('aria-hidden', 'false'); document.body.classList.add('access-locked'); setTimeout(() => $('#pin-input').focus(), 100); }
 function hideAccess() { $('#access-screen').classList.remove('visible'); $('#access-screen').classList.add('hidden'); $('#access-screen').setAttribute('aria-hidden', 'true'); document.body.classList.remove('access-locked'); $('#pin-input').value = ''; $('#pin-message').textContent = ''; }
