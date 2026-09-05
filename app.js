@@ -8,6 +8,22 @@ async function clearWebCache() {
 }
 window.clearWebCache = clearWebCache;
 
+try {
+  window.history.scrollRestoration = 'manual';
+} catch {}
+function resetPageScroll() {
+  const root = document.documentElement;
+  const previousBehavior = root.style.scrollBehavior;
+  root.style.scrollBehavior = 'auto';
+  window.scrollTo(0, 0);
+  root.scrollTop = 0;
+  document.body.scrollTop = 0;
+  root.style.scrollBehavior = previousBehavior;
+}
+resetPageScroll();
+window.addEventListener('load', resetPageScroll);
+window.addEventListener('pageshow', resetPageScroll);
+
 const config = window.APP_CONFIG;
 const content = window.ARCHIVE_CONTENT || {};
 const logoUrl = config.logoImage;
@@ -37,13 +53,8 @@ document.documentElement.style.setProperty('--line', 'rgba(231,228,220,.18)');
 document.body.style.backgroundColor = '#101114';
 const isHomePage = document.body.classList.contains('page-home') || location.pathname.endsWith('/index.html') || location.pathname.endsWith('/');
 if (isHomePage) sessionStorage.removeItem('archiveDeveloperMode');
-const randomMessages = system.randomMessages || [];
-const accessTitles = system.accessTitles || [];
-const pinMessages = system.pinMessages?.length ? system.pinMessages : randomMessages;
 const menuMessages = system.menuMessages?.length ? system.menuMessages : [config.intro];
-const randomPinMessage = () => pinMessages[Math.floor(Math.random() * pinMessages.length)];
 const randomMenuMessage = () => menuMessages[0];
-const randomAccessTitle = () => accessTitles[Math.floor(Math.random() * accessTitles.length)];
 
 function bindCreditsPanel() {
   const topbar = document.querySelector('.topbar');
@@ -65,7 +76,11 @@ function bindCreditsPanel() {
     panel.setAttribute('aria-labelledby', 'credits-title');
     panel.innerHTML = `<div class="credits-sheet"><button class="credits-close" type="button" aria-label="Cerrar créditos">×</button><p class="eyebrow">FOOTAGE ARCHIVE · CRÉDITOS</p><h2 id="credits-title">Hecho con<br><em>memoria.</em></h2><div class="credits-grid"><article><span>DESARROLLADOR</span><strong>iRenyKn (Diego)</strong><p>La idea, la historia y la mirada detrás de este archivo.</p></article><article><span>SELLO</span><strong>Registros Fantasmas</strong><p>La firma emocional, el nombre y la atmósfera del proyecto.</p></article></div><p class="credits-final">Gracias por entrar a este espacio.<br>Lo más especial de este archivo es que existe porque nosotros existimos.</p></div>`;
     document.body.append(panel);
-    const close = () => panel.remove();
+    document.body.classList.add('modal-locked');
+    const close = () => {
+      panel.remove();
+      document.body.classList.remove('modal-locked');
+    };
     panel.querySelector('.credits-close').addEventListener('click', close);
     panel.addEventListener('click', event => { if (event.target === panel) close(); });
     document.addEventListener('keydown', function closeCredits(event) {
@@ -74,6 +89,17 @@ function bindCreditsPanel() {
   };
   button.addEventListener('click', openCredits);
 }
+
+function syncViewportHeight() {
+  const viewport = window.visualViewport;
+  const height = viewport?.height || window.innerHeight;
+  document.documentElement.style.setProperty('--viewport-height', `${height}px`);
+  document.body.classList.toggle('keyboard-open', Boolean(viewport && window.innerHeight - viewport.height > 120));
+}
+syncViewportHeight();
+window.addEventListener('resize', syncViewportHeight);
+window.visualViewport?.addEventListener('resize', syncViewportHeight);
+window.visualViewport?.addEventListener('scroll', syncViewportHeight);
 const letterTexts = { open: 'Abrir carta', close: 'Cerrar carta', soundtrack: 'BANDA SONORA DE ESTA CARTA', signature: 'Con cariño, para leerlo despacio.' };
 const letterUnlockDay = 9;
 const monthNumbers = { enero: 1, febrero: 2, marzo: 3, abril: 4, mayo: 5, junio: 6, julio: 7, agosto: 8, septiembre: 9, octubre: 10, noviembre: 11, diciembre: 12 };
@@ -99,13 +125,10 @@ if (isHomePage && $('#hero-intro')) {
     if (greeting) greeting.textContent = `${timeGreeting()}, ${texts.notes?.greetingName || config.name}.`;
   }, 7000);
 }
-if ($('#access-random')) $('#access-random').textContent = randomPinMessage();
 if ($('#loader p')) {
   $('#loader p').innerHTML = '<span class="loader-title">Footage Archive</span>';
 }
 if (!isHomePage && $('#loader')) { $('#loader').style.transition = 'none'; $('#loader').classList.add('done'); }
-if (!$('#access-random') && $('#pin-form')) { const randomCopy = document.createElement('p'); randomCopy.className = 'access-random'; randomCopy.textContent = randomPinMessage(); $('#pin-form').before(randomCopy); }
-if ($('#access-title')) $('#access-title').innerHTML = randomAccessTitle();
 if ($('#access-screen')) { $('#access-screen').classList.add('visible'); $('#access-screen').setAttribute('aria-hidden', 'false'); document.body.classList.add('access-locked'); }
 let homePinProfile = null;
 function setupHomePinProfiles() {
@@ -255,6 +278,7 @@ function applyLetterPageLock() {
   const accessScreen = $('#access-screen');
   if (!accessScreen) return;
   accessScreen.classList.add('visible');
+  accessScreen.classList.add('has-lock-message');
   accessScreen.setAttribute('aria-hidden', 'false');
   if ($('#access-title')) $('#access-title').innerHTML = 'Carta<br><em>bloqueada.</em>';
   if ($('#access-copy')) $('#access-copy').textContent = `Esta carta se desbloqueará el ${formatReleaseDate(releaseDate)}.`;
@@ -416,7 +440,7 @@ function showFormMessage(text, type = 'error') { const message = $('#form-messag
 async function changeWallImage(event) { const file = event.target.files[0]; event.target.value = ''; if (!file) return; if (!file.type.startsWith('image/')) { if ($('#gallery-status')) $('#gallery-status').textContent = 'Selecciona un archivo de imagen válido. ❌'; return; } if (supabaseStatus !== 'ready' || !window.archiveClient || !navigator.onLine) { if ($('#gallery-status')) $('#gallery-status').textContent = 'No se puede sincronizar: Supabase o la conexión no están disponibles. No se ha guardado la imagen. ❌'; return; } const wall = walls[wallIndex]; if (!wall) return; if ($('#gallery-status')) $('#gallery-status').textContent = `Sincronizando imagen del muro ${wall.slot || wallIndex + 1}...`; try { const path = `muro-${wall.slot || wallIndex + 1}/${Date.now()}-${file.name.replace(/[^a-z0-9.]/gi, '-')}`; const { error: uploadError } = await window.archiveClient.storage.from(config.supabase.galleryBucket).upload(path, file, { upsert: true }); if (uploadError) throw uploadError; const { data: publicData } = window.archiveClient.storage.from(config.supabase.galleryBucket).getPublicUrl(path); const imageUrl = publicData.publicUrl; const payload = { slot: wall.slot || wallIndex + 1, title: wall.title || `Muro ${wallIndex + 1}`, caption: wall.caption || '', image_url: imageUrl }; const result = wall.id ? await window.archiveClient.from(config.supabase.galleryTable).update({ image_url: imageUrl, slot: payload.slot }).eq('id', wall.id) : await window.archiveClient.from(config.supabase.galleryTable).insert(payload).select().single(); if (result.error) throw result.error; if (result.data?.id) wall.id = result.data.id; wall.slot = payload.slot; wall.image = imageUrl; renderWall(); if ($('#gallery-status')) $('#gallery-status').textContent = `Supabase · muro ${payload.slot} sincronizado`; } catch (error) { if ($('#gallery-status')) $('#gallery-status').textContent = 'No se pudo sincronizar la imagen. No se ha guardado nada. Revisa Storage, tabla y permisos.'; console.error(error); } }
 async function saveNote(event) { event.preventDefault(); const form = event.currentTarget; const submit = form.querySelector('button[type="submit"]'); const values = Object.fromEntries(new FormData(form)); const noteText = String(values.message || '').trim(); if (!noteText) { showFormMessage('No se puede enviar un mensaje vacío. Escribe algo antes de continuar. ❤️', 'error'); form.elements.message.focus(); return; } if (supabaseStatus !== 'ready' || !window.archiveClient || !navigator.onLine) { showFormMessage('No se puede enviar: Supabase o la conexión no están disponibles. No se ha enviado nada. ❌', 'error'); return; } form.classList.add('is-sending'); if (submit) submit.disabled = true; showFormMessage('Enviando mensaje...', 'pending'); try { const payload = { [config.supabase.commentsMessageColumn || 'message']: noteText }; const { error } = await window.archiveClient.from(config.supabase.commentsTable).insert(payload); if (error) throw error; showFormMessage('Mensaje enviado correctamente. ❤️', 'success'); form.reset(); } catch (error) { supabaseStatus = 'error'; showFormMessage('No se pudo enviar: la tabla de comentarios o la API tienen un error. No se ha guardado nada.', 'error'); console.error(error); } finally { form.classList.remove('is-sending'); if (submit) submit.disabled = false; } }
 if ($('#prev-wall')) $('#prev-wall').addEventListener('click', () => { wallIndex = (wallIndex - 1 + walls.length) % walls.length; renderWall(); }); if ($('#next-wall')) $('#next-wall').addEventListener('click', () => { wallIndex = (wallIndex + 1) % walls.length; renderWall(); }); if ($('#note-form')) $('#note-form').addEventListener('submit', saveNote);
-function showAccess(title = randomAccessTitle(), copy = texts.accessCopy) { $('#access-title').innerHTML = title; $('#access-copy').textContent = copy; if ($('#access-random')) $('#access-random').textContent = randomPinMessage(); $('#access-screen').classList.remove('hidden'); $('#access-screen').classList.add('visible'); $('#access-screen').setAttribute('aria-hidden', 'false'); document.body.classList.add('access-locked'); setTimeout(() => $('#pin-input').focus(), 100); }
+function showAccess(title = $('#access-title').innerHTML, copy = texts.accessCopy) { $('#access-title').innerHTML = title; $('#access-copy').textContent = copy; $('#access-screen').classList.remove('hidden'); $('#access-screen').classList.add('visible'); $('#access-screen').setAttribute('aria-hidden', 'false'); document.body.classList.add('access-locked'); setTimeout(() => $('#pin-input').focus(), 100); }
 function hideAccess() { $('#access-screen').classList.remove('visible'); $('#access-screen').classList.add('hidden'); $('#access-screen').setAttribute('aria-hidden', 'true'); document.body.classList.remove('access-locked'); $('#pin-input').value = ''; $('#pin-message').textContent = ''; }
 $('#pin-form').addEventListener('submit', event => {
   event.preventDefault();

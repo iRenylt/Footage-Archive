@@ -6,8 +6,8 @@ window.APP_CONFIG = {
   accessPin: "0906",
   developerPin: "0806",
   pinProfiles: {
-    developer: { label: "Desarrollador", image: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Crect width='200' height='200' fill='%23101114'/%3E%3Ccircle cx='100' cy='100' r='76' fill='none' stroke='%23ff9eb4' stroke-width='8'/%3E%3Ctext x='100' y='119' fill='%23fff7f3' font-family='Arial,sans-serif' font-size='54' text-anchor='middle'%3EFA%3C/text%3E%3C/svg%3E" },
-    ella: { label: "Ella", image: "https://xcjzydmprmbpbqkacjwb.supabase.co/storage/v1/object/public/avatars/avatar.png" }
+    ella: { label: "Nohelia", image: "https://xcjzydmprmbpbqkacjwb.supabase.co/storage/v1/object/public/avatars/IMG_1247.jpg" },
+    developer: { label: "Andrés", image: "https://xcjzydmprmbpbqkacjwb.supabase.co/storage/v1/object/public/avatars/IMG_1248.jpg" }
   },
   intro: "Un pequeño archivo de todo lo que siento.",
   lastUpdated: "2026-09-03",
